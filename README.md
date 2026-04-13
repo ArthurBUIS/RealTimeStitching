@@ -40,7 +40,7 @@ panoramic_stitching/
 ## Installation
 
 ```bash
-git clone <this-repo>
+git clone RealTimeStitching
 cd RealTimeStitching
 pip install -r requirements.txt
 ```
