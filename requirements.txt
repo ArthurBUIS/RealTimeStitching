@@ -1,0 +1,27 @@
+# Core deep learning
+torch>=1.13.0
+torchvision>=0.14.0
+
+# Computer vision
+opencv-python>=4.7.0
+Pillow>=9.0
+
+# Numerical
+numpy>=1.23
+scipy>=1.9
+
+# Image quality metrics
+scikit-image>=0.19
+
+# Graph cut (optional but strongly recommended – falls back to DP without it)
+# Install with:  pip install PyMaxflow
+PyMaxflow>=1.2.13
+
+# Training utilities
+tqdm>=4.64
+
+# Visualisation
+matplotlib>=3.6
+
+# Dev / testing
+pytest>=7.0
