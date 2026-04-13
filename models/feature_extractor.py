@@ -121,7 +121,6 @@ class SiameseFeatureExtractor(nn.Module):
 
     # We project to smaller channel counts to keep memory and compute light
     _PROJ_CHANNELS = {
-        "layer1": 64,
         "layer2": 128,
         "layer3": 256,
     }
@@ -141,25 +140,21 @@ class SiameseFeatureExtractor(nn.Module):
 
         # ---- Residual stages ----
         self.layer1 = backbone.layer1
-        self.proj1 = nn.Conv2d(
-            self._STAGE_CHANNELS["layer1"], self._PROJ_CHANNELS["layer1"],
-            kernel_size=1, bias=False
-        )
-        self.ca1 = CAModule(self._PROJ_CHANNELS["layer1"])
+        self.ca1 = CAModule(self._STAGE_CHANNELS["layer1"])
 
         self.layer2 = backbone.layer2
+        self.ca2 = CAModule(self._STAGE_CHANNELS["layer2"])
         self.proj2 = nn.Conv2d(
             self._STAGE_CHANNELS["layer2"], self._PROJ_CHANNELS["layer2"],
             kernel_size=1, bias=False
         )
-        self.ca2 = CAModule(self._PROJ_CHANNELS["layer2"])
 
         self.layer3 = backbone.layer3
+        self.ca3 = CAModule(self._STAGE_CHANNELS["layer3"])
         self.proj3 = nn.Conv2d(
             self._STAGE_CHANNELS["layer3"], self._PROJ_CHANNELS["layer3"],
             kernel_size=1, bias=False
         )
-        self.ca3 = CAModule(self._PROJ_CHANNELS["layer3"])
 
     # The Siamese nature is achieved by calling forward() twice with the
     # same module (shared weights) – no need for separate branch objects.
@@ -177,13 +172,15 @@ class SiameseFeatureExtractor(nn.Module):
         x = self.eca0(x)
 
         x = self.layer1(x)          # (B, 256, H/4, W/4)
-        x = self.ca1(self.proj1(x))
+        x = self.ca1(x)
 
         x = self.layer2(x)          # (B, 512, H/8, W/8)
-        feat_1_8 = self.ca2(self.proj2(x))
+        x = self.ca2(x)
+        feat_1_8 = self.proj2(x)
 
-        x = self.layer3(feat_1_8)   # (B, 1024, H/16, W/16)
-        feat_1_16 = self.ca3(self.proj3(x))
+        x = self.layer3(x)          # (B, 1024, H/16, W/16)
+        x = self.ca3(x)
+        feat_1_16 = self.proj3(x)
 
         return feat_1_8, feat_1_16
 

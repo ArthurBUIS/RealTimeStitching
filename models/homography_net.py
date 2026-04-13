@@ -144,12 +144,14 @@ class TensorDLT(nn.Module):
         src = self.src_corners.to(device=device, dtype=dtype)  # (4, 2)
         src = src.unsqueeze(0).expand(B, -1, -1)               # (B, 4, 2)
 
+        # Keep predictions in a sane range and remove NaN/Inf before solving.
+        delta = torch.nan_to_num(delta, nan=0.0, posinf=0.0, neginf=0.0)
+        delta = delta.clamp(min=-2.0, max=2.0)
         dst = src + delta.view(B, 4, 2)                        # (B, 4, 2)
 
-        # Build the 8×9 DLT matrix for each sample
-        # For each correspondence (xs, ys) → (xd, yd):
-        # [-xs, -ys, -1,  0,   0,   0,  xd*xs, xd*ys, xd ]
-        # [  0,   0,  0, -xs, -ys, -1,  yd*xs, yd*ys, yd ]
+        # Build an 8x8 linear system with h33 fixed to 1:
+        # [xs ys 1 0  0  0 -xd*xs -xd*ys] [h11..h32]^T = xd
+        # [0  0  0 xs ys 1 -yd*xs -yd*ys] [h11..h32]^T = yd
         xs = src[:, :, 0]  # (B, 4)
         ys = src[:, :, 1]
         xd = dst[:, :, 0]
@@ -158,19 +160,35 @@ class TensorDLT(nn.Module):
         zeros = torch.zeros_like(xs)
         ones = torch.ones_like(xs)
 
-        row1 = torch.stack([-xs, -ys, -ones, zeros, zeros, zeros,
-                            xd * xs, xd * ys, xd], dim=-1)  # (B,4,9)
-        row2 = torch.stack([zeros, zeros, zeros, -xs, -ys, -ones,
-                            yd * xs, yd * ys, yd], dim=-1)  # (B,4,9)
+        row1 = torch.stack([
+            xs, ys, ones, zeros, zeros, zeros, -xd * xs, -xd * ys
+        ], dim=-1)  # (B, 4, 8)
+        row2 = torch.stack([
+            zeros, zeros, zeros, xs, ys, ones, -yd * xs, -yd * ys
+        ], dim=-1)  # (B, 4, 8)
 
-        A = torch.cat([row1, row2], dim=1)   # (B, 8, 9)
+        M = torch.cat([row1, row2], dim=1)                    # (B, 8, 8)
+        b = torch.cat([xd, yd], dim=1).unsqueeze(-1)          # (B, 8, 1)
 
-        # Solve via SVD: h = last right singular vector
-        _, _, Vh = torch.linalg.svd(A, full_matrices=True)
-        h = Vh[:, -1, :]               # (B, 9)
+        M = torch.nan_to_num(M, nan=0.0, posinf=0.0, neginf=0.0)
+        b = torch.nan_to_num(b, nan=0.0, posinf=0.0, neginf=0.0)
+
+        # Try a direct solve first; fall back to pseudo-inverse per sample.
+        try:
+            h8 = torch.linalg.solve(M, b).squeeze(-1)         # (B, 8)
+        except RuntimeError:
+            h8_list = []
+            for i in range(B):
+                Mi = M[i]
+                bi = b[i]
+                hi = torch.matmul(torch.linalg.pinv(Mi), bi).squeeze(-1)
+                h8_list.append(hi)
+            h8 = torch.stack(h8_list, dim=0)
+
+        h9 = torch.ones(B, 1, device=device, dtype=dtype)
+        h = torch.cat([h8, h9], dim=1)                        # (B, 9)
         H = h.view(B, 3, 3)
-        # Normalise so H[2,2] = 1
-        H = H / (H[:, 2, 2:3].unsqueeze(-1) + 1e-8)
+        H = torch.nan_to_num(H, nan=0.0, posinf=0.0, neginf=0.0)
         return H
 
 
